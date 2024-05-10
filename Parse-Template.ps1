@@ -3,14 +3,15 @@
     Parse TOKENIZED template
 .DESCRIPTION
     Takes in a TOKENIZED template string and returns a string with values in place of the tokens
+    TOKENS from the template are stripped of their special characters and used to build a lst of KEYS
+    The KEYS will be used to match data properties and those properties will be used to replace the TOKEN in the template.
+    This function DOES support NUMERIC and DECIMAL strings. So if the data is read in from JSON it will still work
 .PARAMETER template
     The TOKENIZED template string
-.PARAMETER InputHashtable
-    A HASHTABLE that will be used to replace the tokens in the template. 
-    Hashtable KEYS will be matched to the TOKENs in the template.
-.PARAMETER InputObject
-    An OBJECT that will be used to replace the TOKENs in the template.
-    Object property names will be matched to the TOKENs in the template.
+.PARAMETER Data
+    Data object that will be used to fill in template. Property names will be matched with Keys (Tokens stripped of their special characters)
+.PARAMETER Formatting
+    A hashtable where the property names = KEY (Tokens stripped of their special characters) and the values = a toString number format
 .EXAMPLE
     C:\PS> $date = Get-Date
     C:\PS> Parse-Template -template 'Today is the %DAYOFYEAR% day of the year and its %DAYOFWEEK% The date is %MONTH% / %DAY% / %YEAR%' -InputObject $data
@@ -23,39 +24,27 @@
     Date:   May 6, 2024
 #>
 Function Parse-Template() {
-    [CmdletBinding(DefaultParameterSetName = 'Object')]
     Param(
-        [Parameter(Mandatory,ParameterSetName = 'Hashtable')]
-        [Parameter(Mandatory,ParameterSetName = 'Object')]
+        [Parameter(Mandatory)]
         [Parameter(HelpMessage="Template or template fragment to parse. (Replace TOKENS with Data)")]
         [ValidateNotNullOrEmpty()]
         [String]
             $Template,
         
-        ### HASHTABLE
-        [Parameter(Mandatory,ParameterSetName = 'Hashtable')]
-        [ValidateScript( { $_ -is [Hashtable] })]
+        [Parameter(Mandatory)]
         [Parameter(HelpMessage="Data Object used to fill template tokens")]
+        [Alias("InputObject")]
         [ValidateNotNullOrEmpty()]
-            $InputHashtable,
+            $Data,
 
-        ### OBJECT
-        [Parameter(Mandatory,ParameterSetName = 'Object')]
-        [ValidateScript( { $_ -is [object] })]
-        [Parameter(HelpMessage="Data Object used to fill template tokens")]
+        [Parameter(HelpMessage="Object/Hashtable of Token Keys and output formatting options")]
         [ValidateNotNullOrEmpty()]
-            $InputObject,
+            $Formatting,
 
-        [Parameter(ParameterSetName = 'Hashtable')]
-        [Parameter(ParameterSetName = 'Object')]
         [Parameter(HelpMessage='RegEx patern used to Identify tokens in Template (Default: %([^%]+)% = %TOKEN_NAME%')]
         [String]
             $TokenPatern = "%([^%]+)%"
     )
-
-    if ($inputobject) { $Data = $InputObject }
-    elseif ($inputhashtable) { $Data = $inputhashtable }
-    else { Throw { "Conditions out of bounds. neither INPUTOBJECT nor INPUTHASHTABLE contains a value" } }
 
     $Tokens = @()
     
@@ -67,10 +56,39 @@ Function Parse-Template() {
         }
     }
 
-    $Tokens | ForEach-Object {
-        $Token = $_
-        $Key = $Token -replace '%',''
-        $Template = $Template.replace($Token, $Data.$Key)
+    Foreach ($Token in $Tokens) {
+        $Key = $Token.replace('%','')  ### -replace '%',''
+        $value = $Data.$key
+
+        if ($Formatting.Keys -contains $Key) {
+            $format = $formatting.$key
+
+            ### make sure Numeric and Decimal strings are converted properly even thought they are of type [string]
+            if ($value -is [string]) {
+
+                if($value -match '[\d\.\d]+') {   ### IDENTIFIES A STRING THATS NUMERIC OR DECIMAL
+
+                    if ($value -match "^\d+$") {  ### [int]
+                        $value = $($value -as [int]).tostring($format)
+                    }
+                    else {                        ### [decimal]
+                        $value = $($value -as [decimal]).tostring($format)
+                    }
+
+                }
+                else {
+                    ### ITS A NON-NUMERIC STRING, NO FORMATTING NEEDED
+                    $value = $value #Safety First?
+                }
+
+            }
+            else {
+                $value = $value.tostring($format)
+            }
+
+        }
+
+        $Template = $Template.replace($Token, $value)
     }
 
     return $Template
