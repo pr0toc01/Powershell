@@ -25,15 +25,13 @@
 #>
 Function Parse-Template() {
     Param(
-        [Parameter(Mandatory)]
-        [Parameter(HelpMessage="Template or template fragment to parse. (Replace TOKENS with Data)")]
+        [Parameter(Mandatory, HelpMessage="Template or template fragment to parse. (Replace TOKENS with Data)")]
         [ValidateNotNullOrEmpty()]
         [String]
             $Template,
         
-        [Parameter(Mandatory)]
-        [Parameter(HelpMessage="Data Object used to fill template tokens")]
-        [Alias("InputObject")]
+        [Parameter(Mandatory, HelpMessage="Data Object used to fill template tokens")]
+        [Alias("InputObject","InputHashtable")]
         [ValidateNotNullOrEmpty()]
             $Data,
 
@@ -49,10 +47,13 @@ Function Parse-Template() {
     $Tokens = @()
     
     ### Automatically pull TOKENS out of template based on the RegEx pattern provided to make TOKENS array
-    $Template.Split([Environment]::NewLine, [StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { 
-        $Token = [regex]::match($_, $TokenPatern).Value
-        if (-not ([string]::IsNullOrEmpty($Token))) {
-            $Tokens += $Token
+    
+    
+    (([regex]$TokenPatern).Matches($Template)).value | ForEach-Object {    
+        $Tok = $_
+        
+        if ($Tokens -notcontains $Tok) {
+            $Tokens += $Tok
         }
     }
 
@@ -62,30 +63,27 @@ Function Parse-Template() {
 
         if ($Formatting.Keys -contains $Key) {
             $format = $formatting.$key
-
-            ### make sure Numeric and Decimal strings are converted properly even thought they are of type [string]
-            if ($value -is [string]) {
-
-                if($value -match '[\d\.\d]+') {   ### IDENTIFIES A STRING THATS NUMERIC OR DECIMAL
-
+            
+            if($value -match '[\d\.\d]+') {   ### Is the Input a number regardless of TYPE
+                
+                if ($value -is [string]) { ### Only cast if the input is of type STRING instead of an actual [INT] or [DECIMAL]
+                    
                     if ($value -match "^\d+$") {  ### [int]
                         $value = $($value -as [int]).tostring($format)
                     }
                     else {                        ### [decimal]
                         $value = $($value -as [decimal]).tostring($format)
                     }
-
                 }
                 else {
-                    ### ITS A NON-NUMERIC STRING, NO FORMATTING NEEDED
-                    $value = $value #Safety First?
+                    ### Value is of proper TYPE, just format it
+                    $value = $value.tostring($format)
                 }
-
             }
             else {
-                $value = $value.tostring($format)
+                ### Input isnt a number so... do nothing?  does this REALLY need to be here? Safety first?
+                $value = $value
             }
-
         }
 
         $Template = $Template.replace($Token, $value)
